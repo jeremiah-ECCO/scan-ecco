@@ -1,21 +1,15 @@
 #!/usr/bin/env node
 /**
- * ECCO Scanner — link integrity check (v2)
+ * ECCO Scanner — link integrity check (v3)
  * ---------------------------------------------------------------
+ * v3 changes (May 2 build #2):
+ *   - Timeout 15s → 30s (gov sites are slow under automation)
+ *   - Concurrency 6 → 4 (less rate-limit pressure)
+ *   - Retries 1 → 2 (third chance on transient timeouts)
+ *   - Retry on 5xx (catches transient server errors)
+ *
  * Doctrine: "Every claim verifiable. Every link live."
  * Live = reachable by a human in a browser. Not "reachable by every bot."
- *
- * What this script enforces:
- *   - 2xx / 3xx        → PASS (live)
- *   - 401 / 403 / 451  → TOLERATED (logged; site rejects automation, not a real 404)
- *   - 999              → TOLERATED (LinkedIn anti-bot code)
- *   - 4xx (other) / 5xx / network failure → FAIL build
- *
- * Domains skipped entirely (not verified):
- *   - own subdomains, Google Fonts, w3.org, GAS endpoints, LinkedIn
- *   (LinkedIn always returns 999; verifying is pointless)
- *
- * Run:  node check-links.mjs index.html
  * ---------------------------------------------------------------
  */
 
@@ -23,11 +17,10 @@ import { readFileSync } from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';
 
 const SOURCE_FILE = process.argv[2] || 'index.html';
-const TIMEOUT_MS = 15_000;
-const CONCURRENCY = 6;
-const RETRIES = 1;
+const TIMEOUT_MS = 30_000;
+const CONCURRENCY = 4;
+const RETRIES = 2;
 
-// Realistic Chrome on macOS UA — most agencies serve content to this UA.
 const BROWSER_UA =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ' +
   '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
@@ -41,18 +34,14 @@ const ACCEPT_HEADERS = {
   'Accept-Encoding': 'gzip, deflate, br',
 };
 
-// Status codes that prove the URL is reachable by humans even though
-// the agency or publisher refuses automated tools. We log these but
-// do not fail the build.
 const TOLERATED_STATUS = new Set([401, 403, 451, 999]);
 
-// Domains we don't verify at all.
 const SKIP_PATTERNS = [
   /etherealconnectionsco\.com/,
   /fonts\.googleapis\.com/,
   /www\.w3\.org/,
   /script\.google\.com/,
-  /linkedin\.com/, // always 999 to bots — verification is pointless
+  /linkedin\.com/,
 ];
 
 function extractUrls(html) {
@@ -60,11 +49,7 @@ function extractUrls(html) {
   const found = new Set();
   let m;
   while ((m = re.exec(html)) !== null) {
-    let url = m[0];
-    // Strip trailing punctuation that's likely sentence-final, not URL-final.
-    // BUT: preserve a single trailing period if the URL legitimately ends in one
-    // (e.g., acquisition.gov DFARS URLs end with "Reporting.").
-    url = url.replace(/[,;)]+$/, '');
+    let url = m[0].replace(/[,;)]+$/, '');
     if (!SKIP_PATTERNS.some((p) => p.test(url))) {
       found.add(url);
     }
@@ -76,7 +61,6 @@ async function checkOne(url, attempt = 0) {
   const ctrl = new AbortController();
   const t = globalThis.setTimeout(() => ctrl.abort(), TIMEOUT_MS);
   try {
-    // GET first now (HEAD is rejected by many gov sites even with a browser UA).
     const res = await fetch(url, {
       method: 'GET',
       redirect: 'follow',
@@ -85,10 +69,19 @@ async function checkOne(url, attempt = 0) {
     });
     const ok = res.status >= 200 && res.status < 400;
     const tolerated = TOLERATED_STATUS.has(res.status);
+    const transient5xx = res.status >= 500 && res.status < 600;
+
+    // Retry on transient 5xx
+    if (transient5xx && attempt < RETRIES) {
+      globalThis.clearTimeout(t);
+      await sleep(1500);
+      return checkOne(url, attempt + 1);
+    }
+
     return { url, status: res.status, ok, tolerated, finalUrl: res.url };
   } catch (err) {
     if (attempt < RETRIES) {
-      await sleep(800);
+      await sleep(1500);
       return checkOne(url, attempt + 1);
     }
     return { url, status: 0, ok: false, tolerated: false, error: err.message };
@@ -113,7 +106,7 @@ async function runWithConcurrency(items, fn, n) {
 }
 
 (async () => {
-  console.log(`\n  ECCO link integrity check v2 — source: ${SOURCE_FILE}`);
+  console.log(`\n  ECCO link integrity check v3 — source: ${SOURCE_FILE}`);
   const html = readFileSync(SOURCE_FILE, 'utf8');
   const urls = extractUrls(html);
   console.log(`  found ${urls.length} external URLs (LinkedIn skipped)\n`);
