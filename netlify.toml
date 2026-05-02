@@ -1,0 +1,6 @@
+[build]
+  command = "node check-links.mjs index.html"
+  publish = "."
+
+[build.environment]
+  NODE_VERSION = "20"
