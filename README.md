@@ -29,6 +29,27 @@ the next green build.
 | `netlify.toml` | Netlify build configuration |
 | `seal.jpg` | ECCO seal asset |
 
+## License & use
+
+This repository is published as a public-research artifact under
+[CC BY-NC-ND 4.0](https://creativecommons.org/licenses/by-nc-nd/4.0/).
+See `LICENSE` for full terms.
+
+**You may:** read, link to, cite, and share for non-commercial purposes
+with attribution to Ethereal Connections Co.
+
+**You may not:** repackage, rebrand, fork-and-resell, incorporate into
+paid products, paid courses, paid newsletters, or any commercial
+offering without prior written permission.
+
+ECCO operates this repository under a public-research posture. Other
+ECCO surfaces (commercial offerings, sales tools, revenue infrastructure)
+are intentionally closed. The visibility of this repository is editorial,
+not an invitation to extraction.
+
+For commercial licensing, partnership, or any use beyond the terms above:
+**jeremiah@etherealconnectionsco.com**
+
 ---
 
 **Ethereal Connections Co.** · Denver, CO · Founded 2025
